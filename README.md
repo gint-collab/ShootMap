@@ -105,4 +105,6 @@ domain, repository, and DTO types; reserve `@MainActor` for ViewModels, coordina
 
 ## License
 
-Released under the [MIT License](LICENSE). This project is publicly available for portfolio and educational reference.
+Copyright © 2026 Septuagint Murito. All rights reserved. See [LICENSE](LICENSE).
+
+This repository is publicly available for portfolio, educational and demonstration purposes only. Copying, modifying, distributing, sublicensing or using this source code (or substantial portions of it) for commercial purposes requires prior written permission from the copyright holder. Viewing and forking through GitHub is permitted in accordance with GitHub's Terms of Service.
