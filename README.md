@@ -100,3 +100,9 @@ Located in `ShootMap/Models/Domain/`:
 The target uses Swift 6.2 **default main-actor isolation**. Domain types are explicitly marked
 `nonisolated` so they remain `Sendable` and actor-agnostic. Keep this convention for all new
 domain, repository, and DTO types; reserve `@MainActor` for ViewModels, coordinators, and views.
+
+---
+
+## License
+
+Released under the [MIT License](LICENSE). This project is publicly available for portfolio and educational reference.
