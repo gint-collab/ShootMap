@@ -17,48 +17,97 @@ import SwiftData
 @ModelActor
 actor SwiftDataPhotoSessionRepository: LocalPhotoSessionRepositoryProtocol {
 
-    // MARK: Read
+    // MARK: - Named API
+
+    /// Inserts or updates a single session.
+    func save(_ session: PhotoSession, syncedAt: Date = .now) async throws {
+        try await upsert([session], syncedAt: syncedAt)
+    }
+
+    /// Inserts or updates a batch in one transaction.
+    func saveMany(_ sessions: [PhotoSession], syncedAt: Date = .now) async throws {
+        try await upsert(sessions, syncedAt: syncedAt)
+    }
+
+    /// Every cached session, soonest first.
+    func fetchAll() async throws -> [PhotoSession] {
+        try await sessions(matching: PhotoSessionQuery())
+    }
+
+    /// Sessions whose start time falls on the calendar day containing `date`.
+    func fetchSessions(
+        for date: Date,
+        calendar: Calendar = .current
+    ) async throws -> [PhotoSession] {
+        guard let range = calendar.dayRange(containing: date) else { return [] }
+        return try await sessions(matching: PhotoSessionQuery(dateRange: range))
+    }
+
+    func findByID(id: String) async throws -> PhotoSession? {
+        try await session(id: id)
+    }
+
+    func delete(id: String) async throws {
+        try await delete(sessionIds: [id])
+    }
+
+    func deleteAll() async throws {
+        try await clear()
+    }
+
+    // MARK: - LocalPhotoSessionRepositoryProtocol
 
     func sessions(matching query: PhotoSessionQuery) async throws -> [PhotoSession] {
         let descriptor = FetchDescriptor<PhotoSessionEntity>(
             predicate: Self.predicate(for: query)
         )
-        let entities = try modelContext.fetch(descriptor)
+        let entities = try perform("fetch sessions") {
+            try modelContext.fetch(descriptor)
+        }
         // Region, sort and limit are finished in memory by the shared helper so
         // the cache and Firestore interpret a query identically.
         return query.apply(to: entities.map(\.domainValue))
     }
 
     func session(id: String) async throws -> PhotoSession? {
-        try entity(id: id)?.domainValue
+        try perform("fetch session") { try entity(id: id)?.domainValue }
     }
 
-    // MARK: Write
-
+    /// Idempotent: replaying the same batch reuses the unique `id` row rather
+    /// than duplicating it, so a repeated sync is a no-op beyond `lastSyncedAt`.
     func upsert(_ sessions: [PhotoSession], syncedAt: Date) async throws {
-        for session in sessions {
-            if let existing = try entity(id: session.id) {
-                existing.apply(session, syncedAt: syncedAt)
-            } else {
-                modelContext.insert(PhotoSessionEntity(session, syncedAt: syncedAt))
+        guard !sessions.isEmpty else { return }
+
+        try perform("save sessions") {
+            for session in sessions {
+                if let existing = try entity(id: session.id) {
+                    existing.apply(session, syncedAt: syncedAt)
+                } else {
+                    modelContext.insert(PhotoSessionEntity(session, syncedAt: syncedAt))
+                }
             }
+            try commit()
         }
-        try modelContext.save()
     }
 
     func delete(sessionIds ids: [String]) async throws {
         guard !ids.isEmpty else { return }
         let idSet = Set(ids)
-        try modelContext.delete(
-            model: PhotoSessionEntity.self,
-            where: #Predicate { idSet.contains($0.id) }
-        )
-        try modelContext.save()
+
+        try perform("delete sessions") {
+            try modelContext.delete(
+                model: PhotoSessionEntity.self,
+                where: #Predicate { idSet.contains($0.id) }
+            )
+            try commit()
+        }
     }
 
     func clear() async throws {
-        try modelContext.delete(model: PhotoSessionEntity.self)
-        try modelContext.save()
+        try perform("clear cache") {
+            try modelContext.delete(model: PhotoSessionEntity.self)
+            try commit()
+        }
     }
 
     // MARK: Cache maintenance
@@ -68,18 +117,22 @@ actor SwiftDataPhotoSessionRepository: LocalPhotoSessionRepositoryProtocol {
             sortBy: [SortDescriptor(\.lastSyncedAt, order: .reverse)]
         )
         descriptor.fetchLimit = 1
-        return try modelContext.fetch(descriptor).first?.lastSyncedAt
+        return try perform("read sync stamp") {
+            try modelContext.fetch(descriptor).first?.lastSyncedAt
+        }
     }
 
     func purgeSessions(endedBefore date: Date) async throws {
-        try modelContext.delete(
-            model: PhotoSessionEntity.self,
-            where: #Predicate { $0.endTime < date }
-        )
-        try modelContext.save()
+        try perform("purge sessions") {
+            try modelContext.delete(
+                model: PhotoSessionEntity.self,
+                where: #Predicate { $0.endTime < date }
+            )
+            try commit()
+        }
     }
 
-    // MARK: Helpers
+    // MARK: - Helpers
 
     private func entity(id: String) throws -> PhotoSessionEntity? {
         var descriptor = FetchDescriptor<PhotoSessionEntity>(
@@ -87,6 +140,31 @@ actor SwiftDataPhotoSessionRepository: LocalPhotoSessionRepositoryProtocol {
         )
         descriptor.fetchLimit = 1
         return try modelContext.fetch(descriptor).first
+    }
+
+    /// Rolls the context back on failure so a partially-applied batch cannot
+    /// leave the cache in a state that never existed remotely.
+    private func commit() throws {
+        do {
+            try modelContext.save()
+        } catch {
+            modelContext.rollback()
+            throw error
+        }
+    }
+
+    /// Single translation point: any store error becomes `.cacheFailure`, so
+    /// `SwiftDataError` never leaves this type.
+    private func perform<T>(_ operation: String, _ work: () throws -> T) throws -> T {
+        do {
+            return try work()
+        } catch let error as PhotoSessionError {
+            throw error
+        } catch {
+            throw PhotoSessionError.cacheFailure(
+                message: "Failed to \(operation): \(error.localizedDescription)"
+            )
+        }
     }
 
     /// Only the predicates SwiftData can express are pushed into the store.
@@ -106,6 +184,19 @@ actor SwiftDataPhotoSessionRepository: LocalPhotoSessionRepositoryProtocol {
                 && (lowerBound == nil || entity.startTime >= lowerBound!)
                 && (upperBound == nil || entity.startTime <= upperBound!)
         }
+    }
+}
+
+// MARK: - Day bounds
+
+private extension Calendar {
+    /// Closed range covering the calendar day containing `date`. The upper bound
+    /// is nudged back a millisecond so a session starting exactly at midnight
+    /// belongs to one day only, never both.
+    func dayRange(containing date: Date) -> ClosedRange<Date>? {
+        let start = startOfDay(for: date)
+        guard let next = self.date(byAdding: .day, value: 1, to: start) else { return nil }
+        return start...next.addingTimeInterval(-0.001)
     }
 }
 

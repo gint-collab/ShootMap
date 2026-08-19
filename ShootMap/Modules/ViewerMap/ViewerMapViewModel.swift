@@ -1,0 +1,319 @@
+//
+//  ViewerMapViewModel.swift
+//  ShootMap
+//
+//  Created by Septuagint Murito on 8/19/26.
+//
+
+import Foundation
+import Observation
+
+/// Date windows the viewer can filter the map by.
+///
+/// Lives in the ViewModel layer, not the view: the view renders the cases and
+/// reports selection, but the date arithmetic belongs here.
+nonisolated enum SessionDateFilter: String, CaseIterable, Identifiable, Sendable {
+    case all
+    case today
+    case tomorrow
+    case thisWeek
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all: "All"
+        case .today: "Today"
+        case .tomorrow: "Tomorrow"
+        case .thisWeek: "This Week"
+        }
+    }
+
+    /// The window a session's start time must fall in, or `nil` for no bound
+    /// beyond "upcoming".
+    func dateRange(now: Date = .now, calendar: Calendar = .current) -> ClosedRange<Date>? {
+        switch self {
+        case .all:
+            return nil
+
+        case .today:
+            // Lower bound is `now`, not midnight, so sessions that already
+            // finished today do not linger on the map.
+            let end = calendar.endOfDay(for: now)
+            return min(now, end)...end
+
+        case .tomorrow:
+            guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) else { return nil }
+            return calendar.startOfDay(for: tomorrow)...calendar.endOfDay(for: tomorrow)
+
+        case .thisWeek:
+            guard let interval = calendar.dateInterval(of: .weekOfYear, for: now) else { return nil }
+            let end = interval.end.addingTimeInterval(-0.001)
+            return min(now, end)...end
+        }
+    }
+}
+
+private extension Calendar {
+    func endOfDay(for date: Date) -> Date {
+        let next = self.date(byAdding: .day, value: 1, to: startOfDay(for: date)) ?? date
+        return next.addingTimeInterval(-0.001)
+    }
+}
+
+/// Drives the viewer's map: browse upcoming sessions and open a photographer's
+/// details.
+///
+/// Cache-first by design. The cache is displayed immediately, Firestore
+/// reconciliation happens in the background, and the map is then re-read **from
+/// the cache** so what the user sees always matches what is persisted.
+///
+/// Imports only `Foundation` and `Observation` — no MapKit, no Firebase, no
+/// SwiftData, no `ModelContext`, no SwiftUI.
+@MainActor
+@Observable
+final class ViewerMapViewModel {
+
+    /// Where the currently displayed sessions came from, so the UI can label
+    /// stale data rather than silently presenting it as live.
+    enum LoadState: Equatable {
+        case idle
+        /// First load, nothing to show yet.
+        case loadingInitial
+        /// Showing cached data while the network is in flight.
+        case showingCache(syncedAt: Date?)
+        case live
+        /// Remote failed, but cached data is still on screen.
+        case offline(syncedAt: Date?, message: String)
+    }
+
+    // MARK: - State
+
+    private(set) var sessions: [PhotoSession] = []
+    private(set) var loadState: LoadState = .idle
+
+    /// Non-fatal message shown alongside data, never instead of it.
+    private(set) var errorMessage: String?
+
+    /// The map viewport. Changing it re-runs the query for the new area.
+    private(set) var region: CoordinateRegion?
+
+    /// Active date window. Set via `selectFilter(_:)`.
+    private(set) var dateFilter: SessionDateFilter = .all
+
+    // MARK: - Derived
+
+    var isLoading: Bool { loadState == .loadingInitial }
+
+    var isEmpty: Bool { sessions.isEmpty && !isLoading }
+
+    /// True when the user is looking at cached data that could not be refreshed.
+    var isShowingStaleData: Bool {
+        if case .offline = loadState { return true }
+        return false
+    }
+
+    /// When the displayed data was last reconciled with the server, if known.
+    var lastSyncedAt: Date? {
+        switch loadState {
+        case let .showingCache(syncedAt), let .offline(syncedAt, _): syncedAt
+        default: nil
+        }
+    }
+
+    // MARK: - Dependencies
+
+    /// Read directly for the instant first paint, and re-read after each
+    /// reconciliation so the map mirrors the persisted truth.
+    private let localRepository: any LocalPhotoSessionRepositoryProtocol
+
+    /// Owns Firestore↔cache reconciliation. The ViewModel never chooses between
+    /// remote and local itself.
+    private let syncService: any PhotoSessionSyncServiceProtocol
+
+    /// `weak` because the coordinator owns this ViewModel.
+    private weak var coordinator: (any MainCoordinatorProtocol)?
+
+    /// The live sync subscription, cancelled on teardown and whenever the query
+    /// changes, so panning cannot leave orphaned listeners running.
+    private var syncTask: Task<Void, Never>?
+
+    // MARK: - Init
+
+    init(
+        localRepository: any LocalPhotoSessionRepositoryProtocol,
+        syncService: any PhotoSessionSyncServiceProtocol,
+        coordinator: (any MainCoordinatorProtocol)? = nil
+    ) {
+        self.localRepository = localRepository
+        self.syncService = syncService
+        self.coordinator = coordinator
+    }
+
+    func setCoordinator(_ coordinator: any MainCoordinatorProtocol) {
+        self.coordinator = coordinator
+    }
+
+    // MARK: - Lifecycle
+
+    /// Call from the view's `.task`.
+    ///
+    /// 1. Load the cache and paint it.
+    /// 2. Start remote synchronisation.
+    func start(in region: CoordinateRegion? = nil) async {
+        self.region = region ?? self.region
+
+        if case .idle = loadState { loadState = .loadingInitial }
+
+        await loadCachedSessions()
+        startSynchronizing()
+    }
+
+    /// Cancels the live subscription. Pair with the view's `.onDisappear`.
+    func stop() {
+        syncTask?.cancel()
+        syncTask = nil
+    }
+
+    /// Re-runs the query for a new viewport. Cheap to call while panning: the
+    /// cache repaints immediately and the remote subscription is replaced.
+    func regionDidChange(to region: CoordinateRegion) async {
+        guard region != self.region else { return }
+        self.region = region
+
+        await loadCachedSessions()
+        startSynchronizing()
+    }
+
+    // MARK: - Step 1–2: cache first
+
+    /// Reads the cache and publishes it. A cache miss leaves whatever is already
+    /// on screen untouched rather than blanking the map.
+    private func loadCachedSessions() async {
+        do {
+            let cached = try await localRepository.sessions(matching: currentQuery)
+            let syncedAt = try? await localRepository.lastSyncedAt()
+
+            if !cached.isEmpty || sessions.isEmpty {
+                sessions = cached
+            }
+
+            // Do not downgrade `.live` — a post-sync cache read is still live data.
+            if case .live = loadState {} else {
+                loadState = .showingCache(syncedAt: syncedAt)
+            }
+        } catch {
+            // A cache failure is not user-facing while remote data may still
+            // arrive; only a *total* failure surfaces, from the remote path.
+            if sessions.isEmpty { loadState = .showingCache(syncedAt: nil) }
+        }
+    }
+
+    // MARK: - Step 3–6: synchronise, persist, re-read
+
+    /// Subscribes to the sync service. The service writes through to the cache;
+    /// this then re-reads the cache so the map reflects persisted state rather
+    /// than an in-flight remote payload.
+    private func startSynchronizing() {
+        syncTask?.cancel()
+
+        let query = currentQuery
+        syncTask = Task { [weak self] in
+            guard let self else { return }
+
+            do {
+                for try await snapshot in syncService.sessions(matching: query) {
+                    try Task.checkCancellation()
+                    await apply(snapshot)
+                }
+            } catch is CancellationError {
+                // Expected on teardown or a viewport change.
+            } catch {
+                // Step 7: remote failed — keep showing the cache.
+                await handleSyncFailure(error)
+            }
+        }
+    }
+
+    private func apply(_ snapshot: PhotoSessionSnapshot) async {
+        switch snapshot.origin {
+        case .cache:
+            // Already painted from the direct cache read; ignore to avoid a flicker.
+            break
+
+        case .remote:
+            // The service has reconciled the cache, so re-read it as the single
+            // source of what is displayed.
+            if let reloaded = try? await localRepository.sessions(matching: currentQuery),
+               !reloaded.isEmpty || snapshot.sessions.isEmpty {
+                sessions = reloaded
+            } else {
+                sessions = snapshot.sessions
+            }
+
+            loadState = .live
+            errorMessage = nil
+        }
+    }
+
+    // MARK: - Step 7: degrade to cache
+
+    /// Firestore is unavailable. The cache stays on screen and is labelled
+    /// stale — the map is never cleared because the network failed.
+    private func handleSyncFailure(_ error: Error) async {
+        let message = (error as? LocalizedError)?.errorDescription
+            ?? "Couldn't reach ShootMap. Showing saved sessions."
+
+        if sessions.isEmpty {
+            await loadCachedSessions()
+        }
+
+        let syncedAt = try? await localRepository.lastSyncedAt()
+        loadState = .offline(syncedAt: syncedAt, message: message)
+        errorMessage = sessions.isEmpty ? message : nil
+    }
+
+    // MARK: - User actions
+
+    /// Pull-to-refresh. Failure leaves the cached sessions in place.
+    func refresh() async {
+        do {
+            _ = try await syncService.refresh(matching: currentQuery)
+            await loadCachedSessions()
+            loadState = .live
+            errorMessage = nil
+        } catch {
+            await handleSyncFailure(error)
+        }
+    }
+
+    func showSessionDetail(for session: PhotoSession) {
+        coordinator?.showSessionDetail(for: session)
+    }
+
+    func dismissError() {
+        errorMessage = nil
+    }
+
+    /// Applies a date window and re-queries both cache and remote.
+    func selectFilter(_ filter: SessionDateFilter) async {
+        guard filter != dateFilter else { return }
+        dateFilter = filter
+
+        await loadCachedSessions()
+        startSynchronizing()
+    }
+
+    // MARK: - Query
+
+    /// Upcoming and in-progress sessions, restricted to the viewport and the
+    /// selected date window. Reuses the domain's status rule rather than
+    /// restating it.
+    private var currentQuery: PhotoSessionQuery {
+        PhotoSessionQuery(
+            region: region,
+            dateRange: dateFilter.dateRange() ?? Date.now...Date.distantFuture,
+            statuses: [.scheduled, .ongoing]
+        )
+    }
+}

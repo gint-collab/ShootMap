@@ -41,6 +41,11 @@ nonisolated enum PhotoSessionError: Error, Equatable, Sendable {
     case permissionDenied
     case quotaExceeded
 
+    /// The local cache could not be read or written (disk full, migration
+    /// failure, corrupt store). Distinct from the network cases because it is
+    /// a device-local problem that retrying rarely fixes.
+    case cacheFailure(message: String)
+
     case unknown(message: String)
 }
 
@@ -69,6 +74,8 @@ extension PhotoSessionError: LocalizedError {
             "You don't have permission to do that."
         case .quotaExceeded:
             "The service is busy. Please try again shortly."
+        case .cacheFailure:
+            "Couldn't read saved sessions on this device."
         case .unknown:
             "Something went wrong. Please try again."
         }
