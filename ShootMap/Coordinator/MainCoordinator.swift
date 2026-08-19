@@ -48,6 +48,14 @@ nonisolated enum MainFlowOutcome: Hashable, Sendable {
 /// the flow is constructible in tests with stubs.
 nonisolated protocol MainFlowDependencies: Sendable {
     var sessionService: any PhotoSessionSyncServiceProtocol { get }
+    /// Cache reads for the viewer map and detail screens.
+    var localSessionRepository: any LocalPhotoSessionRepositoryProtocol { get }
+    /// Remote reads/writes for authoring and detail refresh.
+    var remoteSessionRepository: any PhotoSessionRepositoryProtocol { get }
+    /// Needed by the photographer map to centre on the user.
+    var locationManager: any LocationManagerProtocol { get }
+    /// Identifies the publishing photographer when composing a session.
+    var authRepository: any AuthRepositoryProtocol { get }
 }
 
 // MARK: - Coordinator
