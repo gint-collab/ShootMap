@@ -31,11 +31,11 @@ extension MainCoordinator: CoordinatorProtocol {
         case let .sessionDetail(sessionId):
             SessionDetailView(viewModel: makeSessionDetailViewModel(sessionId: sessionId))
 
-        case .createSession:
-            CreateSessionView(viewModel: makeCreateSessionViewModel(editing: nil))
+        case let .createSession(coordinate):
+            CreateSessionView(viewModel: makeCreateSessionViewModel(coordinate: coordinate))
 
         case let .editSession(session):
-            CreateSessionView(viewModel: makeCreateSessionViewModel(editing: session))
+            CreateSessionView(viewModel: makeCreateSessionViewModel(coordinate: session.coordinate))
 
         case .mySessions:
             MySessionsView(viewModel: makePhotographerMapViewModel())
@@ -72,11 +72,11 @@ extension MainCoordinator: CoordinatorProtocol {
         )
     }
 
-    /// `editing` is currently used to seed the location; full edit support can
-    /// extend this without changing any call site.
-    private func makeCreateSessionViewModel(editing session: PhotoSession?) -> CreateSessionViewModel {
+    /// `coordinate` seeds the form with the pin chosen on the map. Passing `nil`
+    /// opens an empty composer, which the ViewModel refuses to publish.
+    private func makeCreateSessionViewModel(coordinate: Coordinate?) -> CreateSessionViewModel {
         CreateSessionViewModel(
-            selectedCoordinate: session?.coordinate,
+            selectedCoordinate: coordinate,
             sessionRepository: dependencies.remoteSessionRepository,
             authRepository: dependencies.authRepository,
             coordinator: self

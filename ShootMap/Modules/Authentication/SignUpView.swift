@@ -130,7 +130,6 @@ struct SignUpView: View {
             .frame(maxWidth: .infinity)
             .frame(height: 24)
             .buttonStyle(.borderedProminent)
-            .controlSize(.large)
             .disabled(!viewModel.canSubmit)
             
             Button("I already have an account") {

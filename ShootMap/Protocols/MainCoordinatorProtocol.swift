@@ -36,6 +36,9 @@ protocol MainCoordinatorProtocol: AnyObject {
     /// Open the session composer. Ignored for users who cannot publish.
     func showCreateSession()
 
+    /// Open the composer seeded with a chosen location.
+    func showCreateSession(at coordinate: Coordinate?)
+
     /// Open the editor for an existing session. Ignored unless the caller owns it.
     func showEditSession(_ session: PhotoSession)
 

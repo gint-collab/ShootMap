@@ -398,6 +398,9 @@ final class SpyMainCoordinator: MainCoordinatorProtocol {
 
     private(set) var detailSessionIds: [String] = []
     private(set) var createSessionCount = 0
+    /// Coordinates the composer was opened with, so tests can prove the pin
+    /// actually travels from the map to the create screen.
+    private(set) var createSessionCoordinates: [Coordinate?] = []
     private(set) var editedSessions: [PhotoSession] = []
     private(set) var mySessionsCount = 0
     private(set) var finishedSessions: [PhotoSession?] = []
@@ -410,7 +413,11 @@ final class SpyMainCoordinator: MainCoordinatorProtocol {
     func showSessionDetail(for session: PhotoSession) { detailSessionIds.append(session.id) }
     func goBack() { goBackCount += 1 }
     func returnToMap() { returnToMapCount += 1 }
-    func showCreateSession() { createSessionCount += 1 }
+    func showCreateSession() { showCreateSession(at: nil) }
+    func showCreateSession(at coordinate: Coordinate?) {
+        createSessionCount += 1
+        createSessionCoordinates.append(coordinate)
+    }
     func showEditSession(_ session: PhotoSession) { editedSessions.append(session) }
     func showMySessions() { mySessionsCount += 1 }
     func sessionEditingDidFinish(with session: PhotoSession?) { finishedSessions.append(session) }

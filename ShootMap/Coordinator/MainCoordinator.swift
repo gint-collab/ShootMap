@@ -17,8 +17,9 @@ import Observation
 nonisolated enum MainRoute: RouteRepresentable {
     /// Shared by both roles.
     case sessionDetail(sessionId: String)
-    /// Photographer only.
-    case createSession
+    /// Photographer only. Carries the pin the composer should open with, so the
+    /// selected location survives the hop from map to form.
+    case createSession(coordinate: Coordinate?)
     /// Photographer only.
     case editSession(PhotoSession)
     /// The signed-in photographer's own sessions.
@@ -139,9 +140,16 @@ final class MainCoordinator: RouterProtocol, FlowCompleting {
     // Guarded so a viewer can never land on an authoring screen, even if a
     // stale view or a deep link asks for one.
 
-    func showCreateSession() {
+    /// Opens the composer, optionally seeded with the pin the photographer
+    /// dropped on the map.
+    func showCreateSession(at coordinate: Coordinate?) {
         guard canPublishSessions else { return }
-        present(.createSession, style: .fullScreenCover)
+        present(.createSession(coordinate: coordinate), style: .fullScreenCover)
+    }
+
+    /// Opens the composer with no location chosen yet.
+    func showCreateSession() {
+        showCreateSession(at: nil)
     }
 
     func showEditSession(_ session: PhotoSession) {

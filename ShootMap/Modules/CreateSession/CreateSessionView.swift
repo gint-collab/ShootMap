@@ -23,19 +23,24 @@ struct CreateSessionView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                locationSection
-                scheduleSection
-                if let message = viewModel.errorMessage {
-                    errorSection(message)
+            VStack(spacing: 32) {
+                Form {
+                    locationSection
+                    scheduleSection
+                    if let message = viewModel.errorMessage {
+                        errorSection(message)
+                    }
                 }
+                .navigationTitle("New Session")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { toolbarContent }
+                .disabled(viewModel.isSaving)
+                .interactiveDismissDisabled(viewModel.isSaving)
+                
                 publishSection
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 32)
             }
-            .navigationTitle("New Session")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { toolbarContent }
-            .disabled(viewModel.isSaving)
-            .interactiveDismissDisabled(viewModel.isSaving)
         }
     }
 
@@ -125,7 +130,7 @@ struct CreateSessionView: View {
     // MARK: - Publish
 
     private var publishSection: some View {
-        Section {
+        VStack(spacing: 32) {
             Button {
                 Task { await viewModel.save() }
             } label: {
@@ -142,9 +147,14 @@ struct CreateSessionView: View {
             // `canSave` already accounts for `isSaving`, so a double tap cannot
             // start two publishes.
             .disabled(!viewModel.canSave)
-        } footer: {
-            if !viewModel.hasLocation {
-                Text("A location is required before you can publish.")
+            .frame(maxWidth: .infinity)
+            .frame(minWidth: 24)
+            .buttonStyle(.borderedProminent)
+            
+            // Always explains a disabled button, rather than leaving the user
+            // tapping a control that silently does nothing.
+            if let reason = viewModel.validationMessage {
+                Text(reason)
             }
         }
     }

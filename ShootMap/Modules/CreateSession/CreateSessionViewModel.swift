@@ -42,9 +42,25 @@ final class CreateSessionViewModel {
     /// Whether the form is complete enough to attempt a save. Mirrors the domain
     /// rules but is only an affordance — `save()` re-validates authoritatively.
     var canSave: Bool {
-        guard !isSaving, selectedCoordinate != nil else { return false }
-        return (try? buildSession(id: "preflight", author: previewAuthor))
-            .map { (try? $0.validate(calendar: calendar)) != nil } ?? false
+        !isSaving && validationMessage == nil
+    }
+
+    /// Why the form cannot be published yet, or `nil` when it can.
+    ///
+    /// Surfaced so a disabled Publish button always explains itself — an
+    /// unexplained dead button is indistinguishable from a broken one.
+    var validationMessage: String? {
+        guard selectedCoordinate != nil else {
+            return "Choose a location on the map before publishing."
+        }
+        do {
+            try preflightSession().validate(calendar: calendar)
+            return nil
+        } catch let error as DomainValidationError {
+            return PhotoSessionError.invalid(error).errorDescription
+        } catch {
+            return "This session isn't valid yet."
+        }
     }
 
     var hasLocation: Bool { selectedCoordinate != nil }
@@ -213,10 +229,16 @@ final class CreateSessionViewModel {
         }
     }
 
-    /// Stand-in author used only by `canSave`, so the affordance can be computed
+    /// Stand-in author used only by validation, so the form can be checked
     /// synchronously without an auth round trip. Never persisted.
     private var previewAuthor: User {
         User(id: "preflight", email: "preflight@shootmap.app", displayName: "Preflight")
+    }
+
+    /// The session the form currently describes, attributed to a stand-in
+    /// author. Throws only if no location has been chosen.
+    private func preflightSession() throws -> PhotoSession {
+        try buildSession(id: "preflight", author: previewAuthor)
     }
 }
 

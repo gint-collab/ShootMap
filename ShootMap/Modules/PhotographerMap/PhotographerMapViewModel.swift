@@ -173,11 +173,13 @@ final class PhotographerMapViewModel {
 
     /// Opens the composer for the currently selected pin.
     func createSessionAtSelectedLocation() {
-        guard selectedCoordinate != nil else {
+        guard let selectedCoordinate else {
             errorMessage = "Tap the map to choose where you'll be shooting."
             return
         }
-        coordinator?.showCreateSession()
+        // The coordinate travels with the route, so the composer opens with the
+        // location already chosen.
+        coordinator?.showCreateSession(at: selectedCoordinate)
     }
 
     func showSessionDetail(for session: PhotoSession) {

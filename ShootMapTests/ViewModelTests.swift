@@ -298,6 +298,20 @@ struct PhotographerMapViewModelTests {
         #expect(coordinator.createSessionCount == 1)
     }
 
+    @Test("The selected pin is carried into the create screen")
+    func pinTravelsToComposer() {
+        let (sut, _, _, coordinator) = makeSUT()
+
+        sut.selectCoordinate(latitude: 14.6, longitude: 120.9)
+        sut.createSessionAtSelectedLocation()
+
+        // Regression guard: opening the composer with `nil` here is what made
+        // it report "No location chosen".
+        let delivered = coordinator.createSessionCoordinates.first ?? nil
+        #expect(delivered?.latitude == 14.6)
+        #expect(delivered?.longitude == 120.9)
+    }
+
     @Test("Tapping a session pin navigates to its detail")
     func navigatesToDetail() {
         let session = Fixture.session()
