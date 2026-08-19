@@ -101,6 +101,14 @@ final class ViewerMapViewModel {
     /// Active date window. Set via `selectFilter(_:)`.
     private(set) var dateFilter: SessionDateFilter = .all
 
+    /// Current location authorization. Drives the permission prompt and the
+    /// "location is off" notice.
+    private(set) var authorization: LocationAuthorization = .notDetermined
+
+    /// The viewer's own position, once resolved. `nil` means the map should
+    /// keep whatever region it already has rather than jumping to (0, 0).
+    private(set) var userLocation: Coordinate?
+
     // MARK: - Derived
 
     var isLoading: Bool { loadState == .loadingInitial }
@@ -112,6 +120,14 @@ final class ViewerMapViewModel {
         if case .offline = loadState { return true }
         return false
     }
+
+    /// Location was refused, so the view can offer a Settings prompt. Browsing
+    /// still works — the viewer just has to pan the map themselves.
+    var isLocationDenied: Bool { authorization.isDenied }
+
+    /// Whether the map may draw the blue user-location dot. Asking MapKit to
+    /// show it without authorization only produces a console warning.
+    var isLocationAvailable: Bool { authorization.isAuthorized }
 
     /// When the displayed data was last reconciled with the server, if known.
     var lastSyncedAt: Date? {
@@ -134,6 +150,10 @@ final class ViewerMapViewModel {
     /// remote and local itself.
     private let syncService: any PhotoSessionSyncServiceProtocol
 
+    /// Location is optional for browsing: a viewer who refuses permission can
+    /// still pan the map, so nothing here treats denial as an error.
+    private let locationManager: any LocationManagerProtocol
+
     /// `weak` because the coordinator owns this ViewModel.
     private weak var coordinator: (any MainCoordinatorProtocol)?
 
@@ -146,11 +166,13 @@ final class ViewerMapViewModel {
     init(
         localRepository: any LocalPhotoSessionRepositoryProtocol,
         syncService: any PhotoSessionSyncServiceProtocol,
+        locationManager: any LocationManagerProtocol,
         accountName: String = "",
         coordinator: (any MainCoordinatorProtocol)? = nil
     ) {
         self.localRepository = localRepository
         self.syncService = syncService
+        self.locationManager = locationManager
         self.accountName = accountName
         self.coordinator = coordinator
     }
@@ -163,16 +185,57 @@ final class ViewerMapViewModel {
 
     /// Call from the view's `.task`.
     ///
-    /// 1. Load the cache and paint it.
-    /// 2. Start remote synchronisation.
+    /// 1. Resolve location permission and centre on the viewer if granted.
+    /// 2. Load the cache and paint it.
+    /// 3. Start remote synchronisation.
     func start(in region: CoordinateRegion? = nil) async {
         self.region = region ?? self.region
 
         if case .idle = loadState { loadState = .loadingInitial }
 
+        // Permission first: a granted location gives an initial viewport, so the
+        // very first cache read is already scoped to where the viewer is.
+        await requestLocationPermission()
+
         await loadCachedSessions()
         startSynchronizing()
     }
+
+    /// Asks for "when in use" access. Requesting when the choice is already made
+    /// is a no-op inside the manager, so this is safe on every appearance.
+    func requestLocationPermission() async {
+        authorization = await locationManager.requestWhenInUseAuthorization()
+
+        guard authorization.isAuthorized else {
+            // Not an error: browsing works without location, the viewer just
+            // pans to an area themselves.
+            return
+        }
+        await refreshUserLocation()
+    }
+
+    /// Resolves the viewer's position and, on first fix, centres the map there.
+    func refreshUserLocation() async {
+        guard let coordinate = try? await locationManager.currentLocation() else {
+            userLocation = nil
+            return
+        }
+        userLocation = coordinate
+
+        // Only seed the viewport if the caller did not supply one, so a viewer
+        // who has already panned is never yanked back to their own location.
+        if region == nil {
+            region = CoordinateRegion(
+                center: coordinate,
+                latitudeDelta: Self.defaultSpan,
+                longitudeDelta: Self.defaultSpan
+            )
+        }
+    }
+
+    /// Roughly a 5 km window — close enough to be useful, wide enough to show
+    /// more than the viewer's own street.
+    private static let defaultSpan: Double = 0.05
 
     /// Cancels the live subscription. Pair with the view's `.onDisappear`.
     func stop() {

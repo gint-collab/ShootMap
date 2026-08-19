@@ -27,6 +27,8 @@ struct ViewerMapView: View {
     /// Confirmation is view state — the ViewModel only hears the decision.
     @State private var isConfirmingSignOut = false
 
+    @Environment(\.openURL) private var openURL
+
     init(viewModel: ViewerMapViewModel) {
         _viewModel = State(initialValue: viewModel)
     }
@@ -50,6 +52,20 @@ struct ViewerMapView: View {
                 Text("Saved sessions on this device will be cleared.")
             }
             .task { await viewModel.start() }
+            .onChange(of: viewModel.userLocation) { _, location in
+                // Centre once the first fix arrives; panning afterwards is the
+                // user's, so the ViewModel stops seeding the region.
+                guard let location else { return }
+                withAnimation {
+                    cameraPosition = .region(
+                        MKCoordinateRegion(
+                            center: location.clCoordinate,
+                            latitudinalMeters: 5_000,
+                            longitudinalMeters: 5_000
+                        )
+                    )
+                }
+            }
             .onDisappear { viewModel.stop() }
     }
 
@@ -80,7 +96,10 @@ struct ViewerMapView: View {
 
     private var map: some View {
         Map(position: $cameraPosition, selection: $selectedSessionId) {
-            UserAnnotation()
+            // Only drawn once authorization is granted.
+            if viewModel.isLocationAvailable {
+                UserAnnotation()
+            }
 
             ForEach(viewModel.sessions) { session in
                 Annotation(
@@ -112,6 +131,10 @@ struct ViewerMapView: View {
 
     private var filterBar: some View {
         VStack(spacing: 8) {
+            if viewModel.isLocationDenied {
+                locationDeniedNotice
+            }
+
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(SessionDateFilter.allCases) { filter in
@@ -130,6 +153,25 @@ struct ViewerMapView: View {
         }
         .padding(.vertical, 8)
         .background(.bar)
+    }
+
+    // MARK: - Location permission
+
+    /// Browsing still works without location, so this is an informational notice
+    /// with a route to Settings — never a blocking wall.
+    private var locationDeniedNotice: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "location.slash")
+            Text("Location is off. Pan the map to explore an area.")
+                .font(.caption)
+            Spacer(minLength: 0)
+            if let settings = URL(string: UIApplication.openSettingsURLString) {
+                Button("Settings") { openURL(settings) }
+                    .font(.caption.weight(.semibold))
+            }
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal)
     }
 
     // MARK: - Sync status

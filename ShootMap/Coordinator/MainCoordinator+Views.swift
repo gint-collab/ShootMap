@@ -48,6 +48,7 @@ extension MainCoordinator: CoordinatorProtocol {
         ViewerMapViewModel(
             localRepository: dependencies.localSessionRepository,
             syncService: dependencies.sessionService,
+            locationManager: dependencies.locationManager,
             accountName: user.displayName,
             coordinator: self
         )

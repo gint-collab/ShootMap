@@ -346,17 +346,56 @@ struct ViewerMapViewModelTests {
 
     private func makeSUT(
         cached: [PhotoSession] = [],
-        syncStamp: Date? = nil
+        syncStamp: Date? = nil,
+        authorization: LocationAuthorization = .whenInUse
     ) -> (ViewerMapViewModel, MockLocalPhotoSessionRepository, MockSyncService, SpyMainCoordinator) {
         let local = MockLocalPhotoSessionRepository(seed: cached, syncStamp: syncStamp)
         let sync = MockSyncService()
+        let location = MockLocationManager()
+        location.authorization = authorization
         let coordinator = SpyMainCoordinator()
         let sut = ViewerMapViewModel(
             localRepository: local,
             syncService: sync,
+            locationManager: location,
             coordinator: coordinator
         )
         return (sut, local, sync, coordinator)
+    }
+
+    @Test("Starting asks for location permission and centres on the viewer")
+    func requestsLocationPermission() async {
+        let (sut, _, _, _) = makeSUT()
+
+        await sut.start()
+
+        #expect(sut.isLocationAvailable)
+        #expect(sut.userLocation != nil)
+        // A granted location seeds the first viewport.
+        #expect(sut.region != nil)
+    }
+
+    @Test("Denied location still allows browsing")
+    func deniedLocationStillBrowses() async {
+        let cached = Fixture.session(id: "cached")
+        let (sut, _, _, _) = makeSUT(cached: [cached], authorization: .denied)
+
+        await sut.start(in: Fixture.manila)
+
+        #expect(sut.isLocationDenied)
+        #expect(!sut.isLocationAvailable)
+        #expect(sut.userLocation == nil)
+        // Sessions still load — permission is never a gate on browsing.
+        #expect(sut.sessions.map(\.id) == ["cached"])
+    }
+
+    @Test("An explicit region is not overridden by the user's location")
+    func explicitRegionWins() async {
+        let (sut, _, _, _) = makeSUT()
+
+        await sut.start(in: Fixture.manila)
+
+        #expect(sut.region == Fixture.manila)
     }
 
     @Test("Cached sessions are shown before any remote data arrives")
