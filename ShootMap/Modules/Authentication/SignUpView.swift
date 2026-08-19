@@ -18,24 +18,28 @@ struct SignUpView: View {
     }
 
     var body: some View {
-        Form {
-            accountTypeSection
-            detailsSection
+        VStack( spacing: 32) {
+            Form {
+                accountTypeSection
+                detailsSection
 
-            // Shown only for photographers, because only that role requires it.
-            if viewModel.requiresFacebookPage {
-                facebookSection
+                // Shown only for photographers, because only that role requires it.
+                if viewModel.requiresFacebookPage {
+                    facebookSection
+                }
+
+                if let message = viewModel.errorMessage {
+                    errorSection(message)
+                }
             }
-
-            if let message = viewModel.errorMessage {
-                errorSection(message)
-            }
-
+            .navigationTitle("Create Account")
+            .navigationBarTitleDisplayMode(.inline)
+            .disabled(viewModel.isRegistering)
+            
             submitSection
+                .padding(.horizontal, 24)
+                .padding(.bottom, 32)
         }
-        .navigationTitle("Create Account")
-        .navigationBarTitleDisplayMode(.inline)
-        .disabled(viewModel.isRegistering)
     }
 
     // MARK: - Sections
@@ -109,7 +113,7 @@ struct SignUpView: View {
     }
 
     private var submitSection: some View {
-        Section {
+        VStack(spacing: 24) {
             Button {
                 Task { await viewModel.signUp() }
             } label: {
@@ -123,8 +127,12 @@ struct SignUpView: View {
                     Spacer()
                 }
             }
+            .frame(maxWidth: .infinity)
+            .frame(height: 24)
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
             .disabled(!viewModel.canSubmit)
-
+            
             Button("I already have an account") {
                 viewModel.showLogin()
             }

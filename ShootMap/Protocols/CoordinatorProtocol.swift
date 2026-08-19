@@ -198,10 +198,14 @@ struct CoordinatedStack<C: CoordinatorProtocol & Observable>: View {
                 }
         }
         .sheet(item: sheetBinding) { presented in
+            // Modals are presented in their own hierarchy, so a gesture attached
+            // at the app root does not reach them — they opt in here instead.
             coordinator.modalView(for: presented.route)
+                .dismissesKeyboardOnTap()
         }
         .fullScreenCover(item: fullScreenBinding) { presented in
             coordinator.modalView(for: presented.route)
+                .dismissesKeyboardOnTap()
         }
         .task { coordinator.start() }
     }

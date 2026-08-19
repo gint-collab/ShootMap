@@ -19,6 +19,7 @@ struct LoginView: View {
 
     /// Which field currently holds the keyboard, so Return can move between them.
     @FocusState private var focusedField: Field?
+    @State private var isPasswordVisible = false
 
     private enum Field: Hashable {
         case email
@@ -108,35 +109,54 @@ struct LoginView: View {
 
     private var form: some View {
         VStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Email")
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(.secondary)
+            VStack(spacing: 20) {
+                field(title: "Email") {
+                    HStack(spacing: 12) {
+                        Image(systemName: "envelope")
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
+                        TextField("you@example.com", text: $viewModel.email)
+                            .textContentType(.emailAddress)
+                            .keyboardType(.emailAddress)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .focused($focusedField, equals: .email)
+                            .submitLabel(.next)
+                            .onSubmit { focusedField = .password }
+                    }
+                }
 
-                TextField("you@example.com", text: $viewModel.email)
-                    .textContentType(.emailAddress)
-                    .keyboardType(.emailAddress)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .submitLabel(.next)
-                    .focused($focusedField, equals: .email)
-                    .onSubmit { focusedField = .password }
-                    .textFieldStyle(.roundedBorder)
-            }
+                field(title: "Password") {
+                    HStack(spacing: 12) {
+                        Image(systemName: "lock")
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Password")
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(.secondary)
+                        Group {
+                            if isPasswordVisible {
+                                TextField("••••••••", text: $viewModel.password)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                            } else {
+                                SecureField("••••••••", text: $viewModel.password)
+                            }
+                        }
+                        .textContentType(.password)
+                        .focused($focusedField, equals: .password)
+                        .submitLabel(.go)
+                        .onSubmit { Task { await viewModel.login() } }
 
-                SecureField("Enter your password", text: $viewModel.password)
-                    .textContentType(.password)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .submitLabel(.go)
-                    .focused($focusedField, equals: .password)
-                    .onSubmit { submit() }
-                    .textFieldStyle(.roundedBorder)
+                        Button {
+                            isPasswordVisible.toggle()
+                        } label: {
+                            Image(systemName: isPasswordVisible ? "eye.slash" : "eye")
+                                .font(.title3)
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(isPasswordVisible ? "Hide password" : "Show password")
+                    }
+                }
             }
 
             Button("Forgot password?") {
@@ -144,6 +164,20 @@ struct LoginView: View {
             }
             .font(.footnote)
             .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+    }
+    
+    private func field<Content: View>(title: String,
+                                      @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+            content()
+                .padding(.horizontal, 18)
+                .padding(.vertical, 18)
+                .background(Color(.systemGray6),
+                            in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
     }
 

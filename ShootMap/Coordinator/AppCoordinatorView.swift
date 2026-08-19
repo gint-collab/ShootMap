@@ -44,6 +44,8 @@ struct AppCoordinatorView: View {
             }
         }
         .animation(.default, value: coordinator.flow)
+        // Applied once here so every screen in every flow inherits it.
+        .dismissesKeyboardOnTap()
         .task { coordinator.start() }
         .onDisappear { coordinator.stop() }
         .alert(
