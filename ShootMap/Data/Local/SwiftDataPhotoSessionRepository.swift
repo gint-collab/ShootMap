@@ -132,6 +132,23 @@ actor SwiftDataPhotoSessionRepository: LocalPhotoSessionRepositoryProtocol {
         }
     }
 
+    /// Status-aware eviction, backing `applyRetentionPolicy`.
+    ///
+    /// Both conditions are pushed into the store as a single predicate, so the
+    /// rows are never loaded into memory just to be deleted. Comparing against
+    /// the raw status string is what keeps this expressible in `#Predicate`.
+    func purgeSessions(withStatus status: SessionStatus, endedBefore date: Date) async throws {
+        let rawStatus = status.rawValue
+
+        try perform("purge \(rawStatus) sessions") {
+            try modelContext.delete(
+                model: PhotoSessionEntity.self,
+                where: #Predicate { $0.status == rawStatus && $0.endTime < date }
+            )
+            try commit()
+        }
+    }
+
     // MARK: - Helpers
 
     private func entity(id: String) throws -> PhotoSessionEntity? {

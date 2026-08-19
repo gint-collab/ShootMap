@@ -69,7 +69,8 @@ nonisolated final class AppDependencyContainer: AppDependencies {
     @MainActor
     static func live(
         firebase: any FirebaseProviding,
-        modelContainer: ModelContainer
+        modelContainer: ModelContainer,
+        retentionPolicy: CacheRetentionPolicy = .default
     ) -> AppDependencyContainer {
         let authRepository = FirebaseAuthRepository(
             auth: firebase.auth,
@@ -83,7 +84,11 @@ nonisolated final class AppDependencyContainer: AppDependencies {
             sessionProvider: authRepository
         )
         let local = SwiftDataPhotoSessionRepository(modelContainer: modelContainer)
-        let sync = PhotoSessionSyncService(remote: remote, local: local)
+        let sync = PhotoSessionSyncService(
+            remote: remote,
+            local: local,
+            retentionPolicy: retentionPolicy
+        )
 
         return AppDependencyContainer(
             authRepository: authRepository,

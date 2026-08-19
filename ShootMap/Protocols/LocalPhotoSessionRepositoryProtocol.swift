@@ -37,6 +37,32 @@ nonisolated protocol LocalPhotoSessionRepositoryProtocol: Sendable {
 
     /// Evicts rows whose sessions ended before `date`.
     func purgeSessions(endedBefore date: Date) async throws
+
+    /// Evicts rows with the given status whose sessions ended before `date`.
+    /// The primitive the retention policy is built on — status-aware so
+    /// completed and cancelled sessions can age out at different rates.
+    func purgeSessions(withStatus status: SessionStatus, endedBefore date: Date) async throws
+}
+
+// MARK: - Retention
+
+nonisolated extension LocalPhotoSessionRepositoryProtocol {
+
+    /// Applies a retention policy to the cache.
+    ///
+    /// Lives here, in the repository layer, so no ViewModel or coordinator ever
+    /// decides what to evict. Sessions that are ongoing or in the future have an
+    /// `endTime` later than every cutoff, so they are structurally unreachable
+    /// by this — "never remove future scheduled sessions" is a property of the
+    /// query, not a special case.
+    func applyRetentionPolicy(
+        _ policy: CacheRetentionPolicy = .default,
+        now: Date = .now
+    ) async throws {
+        for (status, cutoff) in policy.cutoffs(now: now) {
+            try await purgeSessions(withStatus: status, endedBefore: cutoff)
+        }
+    }
 }
 
 // MARK: - Convenience

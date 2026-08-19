@@ -29,12 +29,18 @@ nonisolated final class PhotoSessionSyncService: PhotoSessionSyncServiceProtocol
     private let remote: any PhotoSessionRepositoryProtocol
     private let local: any LocalPhotoSessionRepositoryProtocol
 
+    /// Retention rules for the local cache. Injected so the app, tests and debug
+    /// builds can choose different windows without changing this type.
+    private let retentionPolicy: CacheRetentionPolicy
+
     init(
         remote: any PhotoSessionRepositoryProtocol,
-        local: any LocalPhotoSessionRepositoryProtocol
+        local: any LocalPhotoSessionRepositoryProtocol,
+        retentionPolicy: CacheRetentionPolicy = .default
     ) {
         self.remote = remote
         self.local = local
+        self.retentionPolicy = retentionPolicy
     }
 
     // MARK: - Cache-first reads
@@ -206,5 +212,20 @@ nonisolated final class PhotoSessionSyncService: PhotoSessionSyncServiceProtocol
     /// cache does not grow without bound.
     func purgeExpired(before date: Date = .now) async throws {
         try await local.purgeSessions(endedBefore: date)
+    }
+
+    /// Applies the cache retention policy.
+    ///
+    /// Safe to call at launch and on returning to the foreground: it only ever
+    /// removes sessions that have already ended *and* outlived their status's
+    /// retention window, so today's and all future sessions are untouched.
+    ///
+    /// Failure is deliberately swallowed by callers that treat this as
+    /// housekeeping — a cache that failed to shrink is not a user-facing problem.
+    func cleanUpCache(
+        policy: CacheRetentionPolicy? = nil,
+        now: Date = .now
+    ) async throws {
+        try await local.applyRetentionPolicy(policy ?? retentionPolicy, now: now)
     }
 }

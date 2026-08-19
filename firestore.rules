@@ -1,0 +1,184 @@
+rules_version = '2';
+
+// ShootMap Firestore Security Rules
+//
+// These rules are the ONLY real security boundary. The ownership checks in
+// FirestorePhotoSessionRepository are usability guards — anyone with the app's
+// API key (which ships in GoogleService-Info.plist and is not a secret) can call
+// Firestore directly and bypass every client-side check.
+//
+// Field names below mirror `SessionField` / `UserField` in FirestoreMapping.swift.
+// Role values mirror `UserRole`: "photographer" | "client" | "admin".
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =====================================================================
+    // Helpers
+    // =====================================================================
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Reads the caller's own profile to determine their role.
+    // NOTE: each call costs a document read, billed against your quota.
+    function callerProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function callerRole() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? callerProfile().role
+        : 'client';
+    }
+
+    // Mirrors UserRole.canPublishSessions. Anything unrecognised is denied,
+    // matching the domain's "unknown roles degrade to least privilege" rule.
+    function canPublish() {
+      return callerRole() in ['photographer', 'admin'];
+    }
+
+    function isAdmin() {
+      return callerRole() == 'admin';
+    }
+
+    // Fields the client is allowed to send. Anything else is rejected outright,
+    // so a future/hostile client cannot inject unknown fields.
+    function hasOnlySessionFields() {
+      return request.resource.data.keys().hasOnly([
+        'photographerId', 'photographerName',
+        'facebookPageName', 'facebookPageURL',
+        'latitude', 'longitude',
+        'date', 'startTime', 'endTime',
+        'createdAt', 'status'
+      ]);
+    }
+
+    function hasRequiredSessionFields() {
+      return request.resource.data.keys().hasAll([
+        'photographerId', 'photographerName',
+        'latitude', 'longitude',
+        'date', 'startTime', 'endTime', 'status'
+      ]);
+    }
+
+    // Type + range validation. Without this, a client could store a string where
+    // the app expects a number and break every reader (the app skips malformed
+    // documents, so bad data silently disappears from the map instead of erroring).
+    function isValidSessionShape() {
+      let d = request.resource.data;
+      return d.photographerId is string && d.photographerId.size() > 0
+        && d.photographerName is string && d.photographerName.size() > 0
+        && d.latitude is number && d.latitude >= -90 && d.latitude <= 90
+        && d.longitude is number && d.longitude >= -180 && d.longitude <= 180
+        && d.date is timestamp
+        && d.startTime is timestamp
+        && d.endTime is timestamp
+        && d.endTime > d.startTime
+        && d.status in ['scheduled', 'ongoing', 'completed', 'cancelled'];
+    }
+
+    // =====================================================================
+    // users/{userId}
+    // =====================================================================
+    match /users/{userId} {
+
+      // READ — a user reads only their own profile.
+      //
+      // Note this is stricter than the app currently assumes: PhotoSession
+      // documents already denormalise photographerName / facebookPage*, so the
+      // viewer map and detail screens never need to read another user's profile.
+      // Admins can read any profile for moderation.
+      allow get: if isSelf(userId) || isAdmin();
+
+      // LIST is denied entirely. Allowing it would let any signed-in user
+      // enumerate the whole user base (emails included).
+      allow list: if isAdmin();
+
+      // CREATE — a user creates only their own profile, at their own UID.
+      // Binding the document id to request.auth.uid is what prevents creating
+      // or squatting a profile for someone else.
+      allow create: if isSelf(userId)
+        && request.resource.data.keys().hasOnly([
+             'email', 'displayName', 'facebookPageName',
+             'facebookPageURL', 'role', 'createdAt'
+           ])
+        && request.resource.data.email is string
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() > 0
+        // Self-assigning 'admin' must be impossible; admin is granted
+        // out-of-band (console or a trusted backend), never by the client.
+        && request.resource.data.role in ['photographer', 'client'];
+
+      // UPDATE — only the owner, and the role is immutable from the client.
+      // Without the role check, any user could promote themselves to
+      // photographer (or admin) and gain write access to photoSessions.
+      allow update: if isSelf(userId)
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.email == resource.data.email;
+
+      // DELETE — account deletion is destructive and leaves orphaned sessions,
+      // so it belongs in a Cloud Function that cleans up atomically.
+      allow delete: if false;
+    }
+
+    // =====================================================================
+    // photoSessions/{sessionId}
+    // =====================================================================
+    match /photoSessions/{sessionId} {
+
+      // READ — any signed-in user. Sessions are public-by-design within the app:
+      // the whole point is that viewers browse photographers' plans.
+      allow read: if isSignedIn();
+
+      // CREATE — photographers (and admins) only.
+      //
+      // `photographerId == request.auth.uid` is the core ownership rule: it
+      // makes it impossible to publish a session attributed to another user,
+      // which is exactly what the client-side `ownedBy(_:)` stamping assumes.
+      allow create: if canPublish()
+        && request.resource.data.photographerId == request.auth.uid
+        && hasOnlySessionFields()
+        && hasRequiredSessionFields()
+        && isValidSessionShape();
+
+      // UPDATE — only the existing owner, and ownership cannot be transferred.
+      //
+      // Two separate checks are required:
+      //   1. resource.data.photographerId == uid
+      //      → the caller owns the document as it exists now.
+      //   2. request.resource.data.photographerId == resource.data.photographerId
+      //      → the incoming write does not change photographerId.
+      //
+      // Check 2 is what prevents "photographerId changed to another user's UID".
+      // Without it, an owner could hand their session to someone else's account
+      // (or to a non-existent uid), and that user would silently inherit a
+      // session they never created and cannot easily remove.
+      allow update: if isSignedIn()
+        && resource.data.photographerId == request.auth.uid
+        && request.resource.data.photographerId == resource.data.photographerId
+        && hasOnlySessionFields()
+        && isValidSessionShape()
+        // createdAt is set once at creation and must never drift.
+        && request.resource.data.createdAt == resource.data.createdAt;
+
+      // DELETE — owner only.
+      allow delete: if isSignedIn()
+        && resource.data.photographerId == request.auth.uid;
+    }
+
+    // =====================================================================
+    // Default deny
+    // =====================================================================
+    // Any collection not matched above is closed. New features must add rules
+    // explicitly rather than inheriting access by accident.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
