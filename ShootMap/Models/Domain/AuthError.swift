@@ -41,6 +41,11 @@ nonisolated enum AuthError: Error, Equatable, Sendable {
     case tooManyRequests
     case operationNotAllowed
 
+    /// The backend rejected the profile read/write. In practice this almost
+    /// always means Firestore security rules are missing or too restrictive —
+    /// a deployment problem, not something the user can fix.
+    case permissionDenied
+
     /// Anything not worth modelling explicitly. Carries the provider's message
     /// for logging only — never rely on its contents for control flow.
     case unknown(message: String)
@@ -73,6 +78,8 @@ extension AuthError: LocalizedError {
             "Too many attempts. Please try again later."
         case .operationNotAllowed:
             "That sign-in method isn't enabled."
+        case .permissionDenied:
+            "The server rejected this request. If you're the developer, check that Firestore security rules are deployed."
         case .unknown:
             "Something went wrong. Please try again."
         }

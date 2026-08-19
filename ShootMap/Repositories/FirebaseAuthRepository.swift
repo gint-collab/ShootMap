@@ -107,7 +107,12 @@ nonisolated final class FirebaseAuthRepository: AuthRepositoryProtocol {
             // Domain rules are enforced before anything is persisted — e.g. a
             // photographer must have a Facebook page.
             try user.validate()
-            try await users.document(user.id).setData(user.firestoreData)
+            // Wrapped so a Firestore rejection (most commonly undeployed
+            // security rules) surfaces as a typed `AuthError` rather than a raw
+            // NSError that the UI can only report as "something went wrong".
+            try await mapErrors {
+                try await users.document(user.id).setData(user.firestoreData)
+            }
         } catch {
             try? await result.user.delete()
             throw error
@@ -204,11 +209,22 @@ private extension AuthError {
     init(_ error: Error) {
         let nsError = error as NSError
 
-        // Firestore reports offline separately from FirebaseAuth.
-        if nsError.domain == FirestoreErrorDomain,
-           nsError.code == FirestoreErrorCode.unavailable.rawValue {
-            self = .networkUnavailable
-            return
+        // Firestore reports offline and rule rejections separately from FirebaseAuth.
+        if nsError.domain == FirestoreErrorDomain {
+            switch nsError.code {
+            case FirestoreErrorCode.unavailable.rawValue,
+                 FirestoreErrorCode.deadlineExceeded.rawValue:
+                self = .networkUnavailable
+                return
+            case FirestoreErrorCode.permissionDenied.rawValue:
+                self = .permissionDenied
+                return
+            case FirestoreErrorCode.unauthenticated.rawValue:
+                self = .notAuthenticated
+                return
+            default:
+                break
+            }
         }
 
         guard let code = AuthErrorCode(rawValue: nsError.code),

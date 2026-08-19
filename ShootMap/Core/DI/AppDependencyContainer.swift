@@ -116,7 +116,9 @@ nonisolated final class AppDependencyContainer: AppDependencies {
 extension AppDependencyContainer {
 
     func makeAppCoordinator() -> AppCoordinator {
-        AppCoordinator(authRepository: authRepository)
+        // The session service is passed so sign-out can drop the local cache;
+        // the coordinator never reads session data itself.
+        AppCoordinator(authRepository: authRepository, sessionService: sessionService)
     }
 
     func makeAuthCoordinator() -> AuthCoordinator {

@@ -1,0 +1,33 @@
+{
+  "indexes": [
+    {
+      "//": "Viewer map: status in [scheduled, ongoing] + startTime range.",
+      "collectionGroup": "photoSessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "startTime", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "//": "A photographer's own sessions over a date range.",
+      "collectionGroup": "photoSessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "photographerId", "order": "ASCENDING" },
+        { "fieldPath": "startTime", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "//": "A photographer's sessions filtered by status and date.",
+      "collectionGroup": "photoSessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "photographerId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "startTime", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

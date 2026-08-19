@@ -69,6 +69,9 @@ final class PhotographerMapViewModel {
 
     private let photographerId: String
 
+    /// Display name of the signed-in photographer, for the account menu.
+    let accountName: String
+
     /// `weak` because the coordinator owns this ViewModel; a strong reference
     /// back would retain both for the app's lifetime.
     private weak var coordinator: (any MainCoordinatorProtocol)?
@@ -79,11 +82,13 @@ final class PhotographerMapViewModel {
         photographerId: String,
         locationManager: any LocationManagerProtocol,
         sessionRepository: any PhotoSessionReading,
+        accountName: String = "",
         coordinator: (any MainCoordinatorProtocol)? = nil
     ) {
         self.photographerId = photographerId
         self.locationManager = locationManager
         self.sessionRepository = sessionRepository
+        self.accountName = accountName
         self.coordinator = coordinator
     }
 
@@ -185,6 +190,14 @@ final class PhotographerMapViewModel {
 
     func showMySessions() {
         coordinator?.showMySessions()
+    }
+
+    /// Requests sign-out. Clears the pending pin first so a half-composed
+    /// session cannot leak into the next account's session on this device.
+    func signOut() {
+        clearSelection()
+        Task { await locationManager.stopUpdatingLocation() }
+        coordinator?.requestSignOut()
     }
 
     // MARK: - Data

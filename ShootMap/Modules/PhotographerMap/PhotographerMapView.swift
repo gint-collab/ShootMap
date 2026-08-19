@@ -22,6 +22,10 @@ struct PhotographerMapView: View {
     /// stays here rather than leaking `MapCameraPosition` into the ViewModel.
     @State private var cameraPosition: MapCameraPosition = .automatic
 
+    /// Confirmation is view state — the ViewModel is only told about the
+    /// confirmed decision, never the intermediate prompt.
+    @State private var isConfirmingSignOut = false
+
     init(viewModel: PhotographerMapViewModel) {
         _viewModel = State(initialValue: viewModel)
     }
@@ -33,6 +37,16 @@ struct PhotographerMapView: View {
             .navigationTitle("Your Map")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbarContent }
+            .confirmationDialog(
+                "Sign out of ShootMap?",
+                isPresented: $isConfirmingSignOut,
+                titleVisibility: .visible
+            ) {
+                Button("Sign Out", role: .destructive) { viewModel.signOut() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Your published sessions stay online. Any pin you haven't published yet will be discarded.")
+            }
             .task { await viewModel.onAppear() }
             .onChange(of: viewModel.userLocation) { _, location in
                 guard let location else { return }
@@ -140,8 +154,18 @@ struct PhotographerMapView: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .topBarTrailing) {
-            Button("My Sessions", systemImage: "list.bullet") {
-                viewModel.showMySessions()
+            Menu {
+                Section("Photographer · \(viewModel.accountName)") {
+                    Button("My Sessions", systemImage: "list.bullet") {
+                        viewModel.showMySessions()
+                    }
+                }
+
+                Button("Sign Out", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
+                    isConfirmingSignOut = true
+                }
+            } label: {
+                Image(systemName: "person.crop.circle")
             }
         }
 

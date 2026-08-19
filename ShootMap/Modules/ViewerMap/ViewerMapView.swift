@@ -24,6 +24,9 @@ struct ViewerMapView: View {
     /// The pin whose callout is open.
     @State private var selectedSessionId: String?
 
+    /// Confirmation is view state — the ViewModel only hears the decision.
+    @State private var isConfirmingSignOut = false
+
     init(viewModel: ViewerMapViewModel) {
         _viewModel = State(initialValue: viewModel)
     }
@@ -35,8 +38,42 @@ struct ViewerMapView: View {
             .overlay(alignment: .center) { initialLoadOverlay }
             .navigationTitle("Sessions Nearby")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar { toolbarContent }
+            .confirmationDialog(
+                "Sign out of ShootMap?",
+                isPresented: $isConfirmingSignOut,
+                titleVisibility: .visible
+            ) {
+                Button("Sign Out", role: .destructive) { viewModel.signOut() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Saved sessions on this device will be cleared.")
+            }
             .task { await viewModel.start() }
             .onDisappear { viewModel.stop() }
+    }
+
+    // MARK: - Toolbar
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            Menu {
+                // Viewers get no authoring actions — the menu mirrors exactly
+                // what the role is permitted to do.
+                Section("Viewer · \(viewModel.accountName)") {
+                    Button("Refresh", systemImage: "arrow.clockwise") {
+                        Task { await viewModel.refresh() }
+                    }
+                }
+
+                Button("Sign Out", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
+                    isConfirmingSignOut = true
+                }
+            } label: {
+                Image(systemName: "person.crop.circle")
+            }
+        }
     }
 
     // MARK: - Map

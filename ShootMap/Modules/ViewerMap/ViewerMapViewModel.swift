@@ -123,6 +123,9 @@ final class ViewerMapViewModel {
 
     // MARK: - Dependencies
 
+    /// Display name of the signed-in viewer, for the account menu.
+    let accountName: String
+
     /// Read directly for the instant first paint, and re-read after each
     /// reconciliation so the map mirrors the persisted truth.
     private let localRepository: any LocalPhotoSessionRepositoryProtocol
@@ -143,10 +146,12 @@ final class ViewerMapViewModel {
     init(
         localRepository: any LocalPhotoSessionRepositoryProtocol,
         syncService: any PhotoSessionSyncServiceProtocol,
+        accountName: String = "",
         coordinator: (any MainCoordinatorProtocol)? = nil
     ) {
         self.localRepository = localRepository
         self.syncService = syncService
+        self.accountName = accountName
         self.coordinator = coordinator
     }
 
@@ -289,6 +294,14 @@ final class ViewerMapViewModel {
 
     func showSessionDetail(for session: PhotoSession) {
         coordinator?.showSessionDetail(for: session)
+    }
+
+    /// Requests sign-out. Stops the live sync first so an in-flight Firestore
+    /// listener cannot write another user's data into the cache after the
+    /// session ends.
+    func signOut() {
+        stop()
+        coordinator?.requestSignOut()
     }
 
     func dismissError() {

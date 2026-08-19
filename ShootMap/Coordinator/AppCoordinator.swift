@@ -50,6 +50,10 @@ final class AppCoordinator {
 
     private let authRepository: any AuthRepositoryProtocol
 
+    /// Used only to drop cached session data on sign-out. Optional so the
+    /// coordinator stays constructible in tests that care only about auth.
+    private let sessionService: (any PhotoSessionSyncServiceProtocol)?
+
     // MARK: Navigation state
 
     /// Current top-level flow. Write access is private so the flow can only
@@ -66,8 +70,12 @@ final class AppCoordinator {
 
     // MARK: Init
 
-    init(authRepository: any AuthRepositoryProtocol) {
+    init(
+        authRepository: any AuthRepositoryProtocol,
+        sessionService: (any PhotoSessionSyncServiceProtocol)? = nil
+    ) {
         self.authRepository = authRepository
+        self.sessionService = sessionService
     }
 
     // MARK: Lifecycle
@@ -100,6 +108,11 @@ final class AppCoordinator {
         signOutFailed = false
         do {
             try await authRepository.signOut()
+
+            // Only after the credential is gone. Cached sessions are the
+            // previous account's data and must not be visible — or writable —
+            // to whoever signs in next on this device.
+            try? await sessionService?.invalidateCache()
         } catch {
             signOutFailed = true
         }
