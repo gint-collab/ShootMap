@@ -53,11 +53,14 @@ nonisolated enum PhotoSessionSort: Hashable, Sendable {
 // MARK: - Common queries
 
 nonisolated extension PhotoSessionQuery {
-    /// Everything a viewer should see on the map right now.
-    static func visibleOnMap(in region: CoordinateRegion, from now: Date = .now) -> Self {
+    /// Everything a viewer should see on the map.
+    ///
+    /// Intentionally has **no date bound**: viewers browse every scheduled and
+    /// in-progress session, including ones whose date has already passed. Only
+    /// status decides visibility.
+    static func visibleOnMap(in region: CoordinateRegion) -> Self {
         PhotoSessionQuery(
             region: region,
-            dateRange: now...Date.distantFuture,
             statuses: [.scheduled, .ongoing]
         )
     }

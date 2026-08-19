@@ -29,18 +29,21 @@ nonisolated enum SessionDateFilter: String, CaseIterable, Identifiable, Sendable
         }
     }
 
-    /// The window a session's start time must fall in, or `nil` for no bound
-    /// beyond "upcoming".
+    /// The window a session's start time must fall in, or `nil` for no bound at
+    /// all.
+    ///
+    /// Windows are **not** floored at `now`: a viewer browsing "All" or "Today"
+    /// sees sessions that have already started or finished, so a shoot earlier
+    /// today is still discoverable. Status filtering is what decides relevance,
+    /// not the clock.
     func dateRange(now: Date = .now, calendar: Calendar = .current) -> ClosedRange<Date>? {
         switch self {
         case .all:
+            // No bound whatsoever — every scheduled session, past or future.
             return nil
 
         case .today:
-            // Lower bound is `now`, not midnight, so sessions that already
-            // finished today do not linger on the map.
-            let end = calendar.endOfDay(for: now)
-            return min(now, end)...end
+            return calendar.startOfDay(for: now)...calendar.endOfDay(for: now)
 
         case .tomorrow:
             guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) else { return nil }
@@ -48,8 +51,8 @@ nonisolated enum SessionDateFilter: String, CaseIterable, Identifiable, Sendable
 
         case .thisWeek:
             guard let interval = calendar.dateInterval(of: .weekOfYear, for: now) else { return nil }
-            let end = interval.end.addingTimeInterval(-0.001)
-            return min(now, end)...end
+            // Includes days earlier in the week that have already passed.
+            return interval.start...interval.end.addingTimeInterval(-0.001)
         }
     }
 }
@@ -382,13 +385,16 @@ final class ViewerMapViewModel {
 
     // MARK: - Query
 
-    /// Upcoming and in-progress sessions, restricted to the viewport and the
-    /// selected date window. Reuses the domain's status rule rather than
-    /// restating it.
+    /// Scheduled and in-progress sessions in the current viewport and date
+    /// window.
+    ///
+    /// There is deliberately **no lower bound at `now`**: a viewer sees every
+    /// scheduled session, including ones whose date has already passed. A
+    /// `nil` `dateRange` therefore means "any date", not "from now on".
     private var currentQuery: PhotoSessionQuery {
         PhotoSessionQuery(
             region: region,
-            dateRange: dateFilter.dateRange() ?? Date.now...Date.distantFuture,
+            dateRange: dateFilter.dateRange(),
             statuses: [.scheduled, .ongoing]
         )
     }

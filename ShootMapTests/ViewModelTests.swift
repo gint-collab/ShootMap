@@ -467,6 +467,34 @@ struct ViewerMapViewModelTests {
         #expect(sut.dateFilter == filter)
     }
 
+    @Test("Past scheduled sessions are still visible to viewers")
+    func pastSessionsRemainVisible() async {
+        let past = Fixture.session(
+            id: "last-week",
+            start: Fixture.now.addingTimeInterval(-.days(7))
+        )
+        let upcoming = Fixture.session(
+            id: "next-week",
+            start: Fixture.now.addingTimeInterval(.days(7))
+        )
+        let (sut, _, _, _) = makeSUT(cached: [past, upcoming])
+
+        await sut.start(in: Fixture.manila)
+
+        // "All" must not hide a session simply because its date has passed.
+        #expect(Set(sut.sessions.map(\.id)) == ["last-week", "next-week"])
+    }
+
+    @Test("Today's window includes sessions that already finished today")
+    func todayIncludesEarlierToday() {
+        let now = Fixture.now
+        let calendar = Fixture.calendar
+        let window = try! #require(SessionDateFilter.today.dateRange(now: now, calendar: calendar))
+
+        #expect(window.lowerBound == calendar.startOfDay(for: now))
+        #expect(window.contains(calendar.startOfDay(for: now)))
+    }
+
     @Test("Today's window excludes tomorrow, and tomorrow's excludes today")
     func filterWindows() {
         let now = Fixture.now
