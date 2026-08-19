@@ -10,13 +10,16 @@ import Observation
 
 /// Date windows the viewer can filter the map by.
 ///
+/// Past-oriented by design: viewers browse sessions that have already happened
+/// as well as ones still to come, so the windows look backwards from today.
+///
 /// Lives in the ViewModel layer, not the view: the view renders the cases and
 /// reports selection, but the date arithmetic belongs here.
 nonisolated enum SessionDateFilter: String, CaseIterable, Identifiable, Sendable {
     case all
     case today
-    case tomorrow
-    case thisWeek
+    case yesterday
+    case lastWeek
 
     var id: String { rawValue }
 
@@ -24,18 +27,17 @@ nonisolated enum SessionDateFilter: String, CaseIterable, Identifiable, Sendable
         switch self {
         case .all: "All"
         case .today: "Today"
-        case .tomorrow: "Tomorrow"
-        case .thisWeek: "This Week"
+        case .yesterday: "Yesterday"
+        case .lastWeek: "Last Week"
         }
     }
 
     /// The window a session's start time must fall in, or `nil` for no bound at
     /// all.
     ///
-    /// Windows are **not** floored at `now`: a viewer browsing "All" or "Today"
-    /// sees sessions that have already started or finished, so a shoot earlier
-    /// today is still discoverable. Status filtering is what decides relevance,
-    /// not the clock.
+    /// Windows are **not** floored at `now`: a shoot that finished earlier today
+    /// still falls inside "Today". Status filtering decides relevance, not the
+    /// clock.
     func dateRange(now: Date = .now, calendar: Calendar = .current) -> ClosedRange<Date>? {
         switch self {
         case .all:
@@ -43,24 +45,32 @@ nonisolated enum SessionDateFilter: String, CaseIterable, Identifiable, Sendable
             return nil
 
         case .today:
-            return calendar.startOfDay(for: now)...calendar.endOfDay(for: now)
+            return calendar.dayRange(containing: now)
 
-        case .tomorrow:
-            guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) else { return nil }
-            return calendar.startOfDay(for: tomorrow)...calendar.endOfDay(for: tomorrow)
+        case .yesterday:
+            guard let yesterday = calendar.date(byAdding: .day, value: -1, to: now) else { return nil }
+            return calendar.dayRange(containing: yesterday)
 
-        case .thisWeek:
-            guard let interval = calendar.dateInterval(of: .weekOfYear, for: now) else { return nil }
-            // Includes days earlier in the week that have already passed.
-            return interval.start...interval.end.addingTimeInterval(-0.001)
+        case .lastWeek:
+            // A rolling seven-day window ending today, rather than the previous
+            // calendar week. "Last week" then always means "the past week from
+            // now", so the window never collapses to a couple of days just
+            // because today happens to be early in the calendar week.
+            let today = calendar.dayRange(containing: now)
+            guard let weekAgo = calendar.date(byAdding: .day, value: -6, to: now) else { return nil }
+            return calendar.startOfDay(for: weekAgo)...today.upperBound
         }
     }
 }
 
 private extension Calendar {
-    func endOfDay(for date: Date) -> Date {
-        let next = self.date(byAdding: .day, value: 1, to: startOfDay(for: date)) ?? date
-        return next.addingTimeInterval(-0.001)
+    /// Midnight-to-midnight range for the day containing `date`. The upper bound
+    /// is nudged back so a session starting exactly at midnight belongs to one
+    /// day only, never both.
+    func dayRange(containing date: Date) -> ClosedRange<Date> {
+        let start = startOfDay(for: date)
+        let end = self.date(byAdding: .day, value: 1, to: start) ?? date
+        return start...end.addingTimeInterval(-0.001)
     }
 }
 

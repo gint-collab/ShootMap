@@ -456,8 +456,8 @@ struct ViewerMapViewModelTests {
     @Test("Date filters change the queried window", arguments: [
         SessionDateFilter.all,
         .today,
-        .tomorrow,
-        .thisWeek
+        .yesterday,
+        .lastWeek
     ])
     func dateFilters(filter: SessionDateFilter) async {
         let (sut, _, _, _) = makeSUT()
@@ -495,18 +495,54 @@ struct ViewerMapViewModelTests {
         #expect(window.contains(calendar.startOfDay(for: now)))
     }
 
-    @Test("Today's window excludes tomorrow, and tomorrow's excludes today")
-    func filterWindows() {
+    @Test("Yesterday sits entirely before today, with no overlap")
+    func pastWindowsDoNotOverlap() {
         let now = Fixture.now
         let calendar = Fixture.calendar
 
         let today = try! #require(SessionDateFilter.today.dateRange(now: now, calendar: calendar))
-        let tomorrow = try! #require(SessionDateFilter.tomorrow.dateRange(now: now, calendar: calendar))
+        let yesterday = try! #require(SessionDateFilter.yesterday.dateRange(now: now, calendar: calendar))
 
-        #expect(today.contains(now.addingTimeInterval(3_600)))
-        #expect(!today.contains(now.addingTimeInterval(.days(1))))
-        #expect(tomorrow.lowerBound > today.upperBound)
+        // Both windows look backwards, and neither claims the other's days.
+        #expect(yesterday.upperBound < today.lowerBound)
+        #expect(!yesterday.contains(now))
+        #expect(!today.contains(yesterday.lowerBound))
+
         #expect(SessionDateFilter.all.dateRange(now: now, calendar: calendar) == nil)
+    }
+
+    @Test("Last week is a rolling seven days ending today")
+    func lastWeekIsRollingSevenDays() {
+        let now = Fixture.now
+        let calendar = Fixture.calendar
+
+        let today = try! #require(SessionDateFilter.today.dateRange(now: now, calendar: calendar))
+        let yesterday = try! #require(SessionDateFilter.yesterday.dateRange(now: now, calendar: calendar))
+        let lastWeek = try! #require(SessionDateFilter.lastWeek.dateRange(now: now, calendar: calendar))
+
+        // The window ends today, so it contains today and yesterday …
+        #expect(lastWeek.upperBound == today.upperBound)
+        #expect(lastWeek.contains(now))
+        #expect(lastWeek.contains(yesterday.lowerBound))
+
+        // … and starts at midnight six days back, giving seven whole days.
+        let expectedStart = calendar.startOfDay(for: now.addingTimeInterval(-.days(6)))
+        #expect(lastWeek.lowerBound == expectedStart)
+
+        // Anything older than the window falls outside it.
+        #expect(!lastWeek.contains(expectedStart.addingTimeInterval(-1)))
+    }
+
+    @Test("Yesterday's window covers that whole calendar day")
+    func yesterdayCoversFullDay() {
+        let now = Fixture.now
+        let calendar = Fixture.calendar
+        let yesterday = try! #require(SessionDateFilter.yesterday.dateRange(now: now, calendar: calendar))
+
+        let expectedStart = calendar.startOfDay(for: now.addingTimeInterval(-.days(1)))
+        #expect(yesterday.lowerBound == expectedStart)
+        // A shoot at midday yesterday is inside the window.
+        #expect(yesterday.contains(expectedStart.addingTimeInterval(.hours(12))))
     }
 
     @Test("Selecting a pin navigates to the session detail")

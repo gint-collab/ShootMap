@@ -231,12 +231,22 @@ struct ViewerMapView: View {
             .padding()
             .transition(.move(edge: .bottom).combined(with: .opacity))
         } else if viewModel.isEmpty {
-            Text("No sessions \(viewModel.dateFilter.title.lowercased()) in this area.")
+            Text(emptyStateText)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .padding()
                 .frame(maxWidth: .infinity)
                 .background(.bar)
+        }
+    }
+
+    /// Reads naturally for every filter — "No sessions all in this area" does not.
+    private var emptyStateText: String {
+        switch viewModel.dateFilter {
+        case .all: "No sessions in this area yet."
+        case .today: "No sessions in this area today."
+        case .yesterday: "No sessions in this area yesterday."
+        case .lastWeek: "No sessions in this area last week."
         }
     }
 
