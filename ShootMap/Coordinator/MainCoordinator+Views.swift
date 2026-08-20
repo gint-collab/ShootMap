@@ -69,6 +69,9 @@ extension MainCoordinator: CoordinatorProtocol {
             sessionId: sessionId,
             localRepository: dependencies.localSessionRepository,
             remoteRepository: dependencies.remoteSessionRepository,
+            sessionWriter: dependencies.remoteSessionRepository,
+            // Drives the ownership check — only the author sees status controls.
+            currentUserId: user.id,
             coordinator: self
         )
     }

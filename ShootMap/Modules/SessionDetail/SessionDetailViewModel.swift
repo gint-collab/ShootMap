@@ -28,9 +28,31 @@ final class SessionDetailViewModel {
     private(set) var isLoading = false
     private(set) var errorMessage: String?
 
+    /// A status change is in flight.
+    private(set) var isUpdatingStatus = false
+
     // MARK: - Derived
 
     var isMissing: Bool { session == nil && !isLoading }
+
+    /// Whether the signed-in user authored this session, and may therefore
+    /// change its status. Ownership is re-checked server-side by the repository
+    /// and by Firestore rules — this only decides what to show.
+    var isOwner: Bool {
+        guard let session else { return false }
+        return session.photographerId == currentUserId
+    }
+
+    /// Statuses this session may legally move to next.
+    ///
+    /// Derived from the domain's state machine rather than a hand-written list,
+    /// so the UI can never offer a transition the model would reject.
+    var availableStatusTransitions: [SessionStatus] {
+        guard let session, isOwner else { return [] }
+        return SessionStatus.allCases.filter { session.status.canTransition(to: $0) }
+    }
+
+    var canChangeStatus: Bool { !availableStatusTransitions.isEmpty && !isUpdatingStatus }
 
     /// Whether the photographer published a page worth opening.
     var facebookPageURL: URL? { session?.facebookPageURL }
@@ -54,6 +76,13 @@ final class SessionDetailViewModel {
     /// Remote read slice, for refreshing the cached copy.
     private let remoteRepository: any PhotoSessionReading
 
+    /// Write slice, used only to change status. Separate from the reader so the
+    /// dependency states plainly what this screen is allowed to mutate.
+    private let sessionWriter: any PhotoSessionWriting
+
+    /// The signed-in user, for the ownership check.
+    private let currentUserId: String
+
     /// `weak` because the coordinator owns this ViewModel.
     private weak var coordinator: (any MainCoordinatorProtocol)?
 
@@ -63,11 +92,15 @@ final class SessionDetailViewModel {
         sessionId: String,
         localRepository: any LocalPhotoSessionRepositoryProtocol,
         remoteRepository: any PhotoSessionReading,
+        sessionWriter: any PhotoSessionWriting,
+        currentUserId: String = "",
         coordinator: (any MainCoordinatorProtocol)? = nil
     ) {
         self.sessionId = sessionId
         self.localRepository = localRepository
         self.remoteRepository = remoteRepository
+        self.sessionWriter = sessionWriter
+        self.currentUserId = currentUserId
         self.coordinator = coordinator
     }
 
@@ -77,12 +110,16 @@ final class SessionDetailViewModel {
         session: PhotoSession,
         localRepository: any LocalPhotoSessionRepositoryProtocol,
         remoteRepository: any PhotoSessionReading,
+        sessionWriter: any PhotoSessionWriting,
+        currentUserId: String = "",
         coordinator: (any MainCoordinatorProtocol)? = nil
     ) {
         self.init(
             sessionId: session.id,
             localRepository: localRepository,
             remoteRepository: remoteRepository,
+            sessionWriter: sessionWriter,
+            currentUserId: currentUserId,
             coordinator: coordinator
         )
         self.session = session
@@ -128,6 +165,42 @@ final class SessionDetailViewModel {
 
     func dismissError() {
         errorMessage = nil
+    }
+
+    // MARK: - Status changes
+
+    /// Moves the session to `next`, if the transition is legal and the caller
+    /// owns it.
+    ///
+    /// The domain's `transitioned(to:)` is the gate: an illegal move is refused
+    /// here rather than being sent to the server and rejected there.
+    func updateStatus(to next: SessionStatus) async {
+        guard let current = session else { return }
+        guard isOwner else {
+            errorMessage = PhotoSessionError.notSessionOwner.errorDescription
+            return
+        }
+        guard let updated = current.transitioned(to: next) else {
+            errorMessage = "That status change isn't allowed from \(current.status.rawValue)."
+            return
+        }
+
+        errorMessage = nil
+        isUpdatingStatus = true
+        defer { isUpdatingStatus = false }
+
+        do {
+            // Remote first: the cache must never claim a status the server
+            // rejected, so a failure leaves no local trace.
+            try await sessionWriter.updateStatus(next, forSessionId: current.id)
+            session = updated
+            // Best-effort cache refresh — the map reflects it on the next sync
+            // regardless, so a cache failure is not worth surfacing.
+            try? await localRepository.upsert([updated], syncedAt: .now)
+        } catch {
+            errorMessage = (error as? LocalizedError)?.errorDescription
+                ?? "Couldn't update the session status."
+        }
     }
 
     // MARK: - Navigation intent

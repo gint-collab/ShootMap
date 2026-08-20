@@ -338,6 +338,99 @@ struct PhotographerMapViewModelTests {
     }
 }
 
+// MARK: - Session detail
+
+@MainActor
+@Suite("SessionDetailViewModel")
+struct SessionDetailViewModelTests {
+
+    private func makeSUT(
+        session: PhotoSession = Fixture.session(photographerId: "owner-1"),
+        currentUserId: String = "owner-1"
+    ) -> (SessionDetailViewModel, MockPhotoSessionRepository, MockLocalPhotoSessionRepository) {
+        let remote = MockPhotoSessionRepository()
+        remote.sessions = [session]
+        let local = MockLocalPhotoSessionRepository(seed: [session])
+
+        let sut = SessionDetailViewModel(
+            session: session,
+            localRepository: local,
+            remoteRepository: remote,
+            sessionWriter: remote,
+            currentUserId: currentUserId,
+            coordinator: SpyMainCoordinator()
+        )
+        return (sut, remote, local)
+    }
+
+    @Test("The owner is offered only legal transitions")
+    func ownerSeesLegalTransitions() {
+        let (sut, _, _) = makeSUT(
+            session: Fixture.session(photographerId: "owner-1", status: .scheduled)
+        )
+
+        #expect(sut.isOwner)
+        // From `scheduled` the domain permits ongoing and cancelled only.
+        #expect(Set(sut.availableStatusTransitions) == [.ongoing, .cancelled])
+    }
+
+    @Test("A non-owner is offered no transitions")
+    func viewerSeesNoTransitions() {
+        let (sut, _, _) = makeSUT(currentUserId: "someone-else")
+
+        #expect(!sut.isOwner)
+        #expect(sut.availableStatusTransitions.isEmpty)
+        #expect(!sut.canChangeStatus)
+    }
+
+    @Test("A terminal session offers no further transitions")
+    func terminalStatusIsFinal() {
+        let (sut, _, _) = makeSUT(
+            session: Fixture.session(photographerId: "owner-1", status: .completed)
+        )
+
+        #expect(sut.availableStatusTransitions.isEmpty)
+    }
+
+    @Test("Changing status updates the session and the cache")
+    func updateStatusSucceeds() async {
+        let session = Fixture.session(id: "s1", photographerId: "owner-1", status: .scheduled)
+        let (sut, remote, local) = makeSUT(session: session)
+
+        await sut.updateStatus(to: .ongoing)
+
+        #expect(sut.session?.status == .ongoing)
+        #expect(remote.sessions.first?.status == .ongoing)
+        #expect(local.storage["s1"]?.status == .ongoing)
+        #expect(sut.errorMessage == nil)
+        #expect(!sut.isUpdatingStatus)
+    }
+
+    @Test("An illegal transition is refused before any network call")
+    func illegalTransitionRefused() async {
+        let session = Fixture.session(id: "s1", photographerId: "owner-1", status: .scheduled)
+        let (sut, remote, _) = makeSUT(session: session)
+
+        // scheduled → completed is not a legal move.
+        await sut.updateStatus(to: .completed)
+
+        #expect(sut.session?.status == .scheduled)
+        #expect(remote.sessions.first?.status == .scheduled)
+        #expect(sut.errorMessage != nil)
+    }
+
+    @Test("A non-owner cannot change status")
+    func nonOwnerCannotChangeStatus() async {
+        let session = Fixture.session(id: "s1", photographerId: "owner-1", status: .scheduled)
+        let (sut, remote, _) = makeSUT(session: session, currentUserId: "intruder")
+
+        await sut.updateStatus(to: .cancelled)
+
+        #expect(remote.sessions.first?.status == .scheduled)
+        #expect(sut.errorMessage == PhotoSessionError.notSessionOwner.errorDescription)
+    }
+}
+
 // MARK: - Viewer map
 
 @MainActor

@@ -103,7 +103,7 @@ struct ViewerMapView: View {
 
             ForEach(viewModel.sessions) { session in
                 Annotation(
-                    session.photographerName,
+                    session.facebookPageName ?? "",
                     coordinate: session.coordinate.clCoordinate
                 ) {
                     SessionPin(
@@ -288,7 +288,7 @@ private struct SessionPin: View {
                 .padding(.vertical, 1)
                 .background(.regularMaterial, in: Capsule())
         }
-        .scaleEffect(isSelected ? 1.1 : 1)
+        .scaleEffect(isSelected ? 1.5 : 1)
         .animation(.snappy, value: isSelected)
     }
 

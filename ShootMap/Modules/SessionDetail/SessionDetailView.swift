@@ -84,9 +84,28 @@ struct SessionDetailView: View {
     // MARK: Schedule
 
     private func scheduleSection(_ session: PhotoSession) -> some View {
-        Section("Schedule") {
+        Section {
             LabeledContent("Status") {
-                StatusBadge(status: session.status)
+                HStack(spacing: 8) {
+                    if viewModel.isUpdatingStatus {
+                        ProgressView()
+                    } else {
+                        Menu {
+                            ForEach(viewModel.availableStatusTransitions, id: \.self) { next in
+                                Button {
+                                    Task { await viewModel.updateStatus(to: next) }
+                                } label: {
+                                    Label(
+                                        StatusCopy.action(for: next),
+                                        systemImage: StatusCopy.icon(for: next)
+                                    )
+                                }
+                            }
+                        } label: {
+                            StatusBadge(status: session.status)
+                        }
+                    }
+                }
             }
 
             LabeledContent("Date") {
@@ -99,6 +118,12 @@ struct SessionDetailView: View {
 
             LabeledContent("End Time") {
                 Text(session.endTime, format: .dateTime.hour().minute())
+            }
+        } header: {
+            Text("Schedule")
+        } footer: {
+            if viewModel.isOwner, viewModel.availableStatusTransitions.isEmpty {
+                Text("This session is \(session.status.rawValue) and can't change further.")
             }
         }
     }
@@ -169,6 +194,30 @@ struct SessionDetailView: View {
         item.openInMaps(launchOptions: [
             MKLaunchOptionsMapCenterKey: NSValue(mkCoordinate: session.coordinate.clCoordinate)
         ])
+    }
+}
+
+// MARK: - Status copy
+
+/// Wording for status actions, kept in the view layer so the domain enum stays
+/// free of UI strings.
+private enum StatusCopy {
+    static func action(for status: SessionStatus) -> String {
+        switch status {
+        case .scheduled: "Mark as Scheduled"
+        case .ongoing: "Start Session"
+        case .completed: "Mark as Completed"
+        case .cancelled: "Cancel Session"
+        }
+    }
+
+    static func icon(for status: SessionStatus) -> String {
+        switch status {
+        case .scheduled: "calendar"
+        case .ongoing: "play.circle"
+        case .completed: "checkmark.circle"
+        case .cancelled: "xmark.circle"
+        }
     }
 }
 
