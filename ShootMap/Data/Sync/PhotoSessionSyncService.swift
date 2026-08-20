@@ -186,8 +186,8 @@ nonisolated final class PhotoSessionSyncService: PhotoSessionSyncServiceProtocol
 
     /// Cancelled sessions are **updated, not deleted**, so a viewer with the
     /// detail screen open sees the cancellation rather than an empty screen.
-    /// They fall out of the cache naturally on the next map sync, since
-    /// map queries filter to `.scheduled` / `.ongoing`.
+    /// They also remain on the map — viewers browse every status — until the
+    /// retention policy eventually evicts them.
     func cancel(sessionId id: String) async throws {
         try await remote.updateStatus(.cancelled, forSessionId: id)
 

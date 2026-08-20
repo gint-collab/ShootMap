@@ -275,7 +275,7 @@ private struct SessionPin: View {
 
     var body: some View {
         VStack(spacing: 2) {
-            Image(systemName: "camera.fill")
+            Image(systemName: icon)
                 .font(.caption)
                 .foregroundStyle(.white)
                 .padding(isSelected ? 10 : 7)
@@ -288,12 +288,28 @@ private struct SessionPin: View {
                 .padding(.vertical, 1)
                 .background(.regularMaterial, in: Capsule())
         }
+        // Finished sessions stay visible but recede, so live ones read first.
         .scaleEffect(isSelected ? 1.5 : 1)
         .animation(.snappy, value: isSelected)
     }
 
+    /// Every status is now shown on the map, so the pin has to distinguish them
+    /// — otherwise a cancelled shoot looks identical to one going ahead.
     private var tint: Color {
-        session.status == .ongoing ? .green : .blue
+        switch session.status {
+        case .scheduled: .blue
+        case .ongoing: .green
+        case .completed: .orange
+        case .cancelled: .red
+        }
+    }
+
+    private var icon: String {
+        switch session.status {
+        case .scheduled, .ongoing: "camera.fill"
+        case .completed: "checkmark"
+        case .cancelled: "xmark"
+        }
     }
 }
 

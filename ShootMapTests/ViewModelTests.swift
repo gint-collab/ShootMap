@@ -560,6 +560,19 @@ struct ViewerMapViewModelTests {
         #expect(sut.dateFilter == filter)
     }
 
+    @Test("Every status is visible to viewers, not just active ones")
+    func allStatusesVisible() async {
+        let sessions = SessionStatus.allCases.map { status in
+            Fixture.session(id: status.rawValue, status: status)
+        }
+        let (sut, _, _, _) = makeSUT(cached: sessions)
+
+        await sut.start(in: Fixture.manila)
+
+        // Completed and cancelled sessions must remain browsable and openable.
+        #expect(Set(sut.sessions.map(\.id)) == Set(SessionStatus.allCases.map(\.rawValue)))
+    }
+
     @Test("Past scheduled sessions are still visible to viewers")
     func pastSessionsRemainVisible() async {
         let past = Fixture.session(

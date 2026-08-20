@@ -405,7 +405,7 @@ final class ViewerMapViewModel {
         PhotoSessionQuery(
             region: region,
             dateRange: dateFilter.dateRange(),
-            statuses: [.scheduled, .ongoing]
+            statuses: [.scheduled, .ongoing, .completed]
         )
     }
 }
