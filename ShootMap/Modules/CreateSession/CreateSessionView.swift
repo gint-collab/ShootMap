@@ -148,8 +148,8 @@ struct CreateSessionView: View {
             // start two publishes.
             .disabled(!viewModel.canSave)
             .frame(maxWidth: .infinity)
-            .frame(minWidth: 24)
             .buttonStyle(.borderedProminent)
+            .controlSize(.large)
             
             // Always explains a disabled button, rather than leaving the user
             // tapping a control that silently does nothing.

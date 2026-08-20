@@ -363,6 +363,7 @@ private struct SessionCallout: View {
                 Text("View Details")
                     .fontWeight(.semibold)
                     .frame(maxWidth: .infinity)
+                    .frame(height: 44)
             }
             .buttonStyle(.borderedProminent)
         }

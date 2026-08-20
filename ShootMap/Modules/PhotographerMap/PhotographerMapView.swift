@@ -79,9 +79,7 @@ struct PhotographerMapView: View {
 
                 // The pin being placed.
                 if let selected = viewModel.selectedCoordinate {
-                    Annotation("New session", coordinate: selected.clCoordinate) {
-                        SelectedPin()
-                    }
+                    Marker("New session", coordinate: selected.clCoordinate)
                 }
             }
             .mapControls {
@@ -153,7 +151,7 @@ struct PhotographerMapView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        ToolbarItem(placement: .topBarTrailing) {
+        ToolbarItem(placement: .topBarLeading) {
             Menu {
                 Section("Photographer · \(viewModel.accountName)") {
                     Button("My Sessions", systemImage: "list.bullet") {
@@ -205,7 +203,7 @@ struct PhotographerMapView: View {
 
 private struct SelectedPin: View {
     var body: some View {
-        Image(systemName: "camera.viewfinder")
+        Image(systemName: "mappin")
             .font(.title2)
             .foregroundStyle(.white)
             .padding(8)
