@@ -36,6 +36,22 @@ Viewers browse those sessions on a map and see the photographer's details.
 
 ---
 
+## 📸 Screenshots / Demo
+
+| Login Page | Create Photographer Account | Create Viewer Account |
+| --- | --- | --- |
+|<img width="350" height="650" alt="Login page" src="https://github.com/user-attachments/assets/8b1166dd-7869-48c2-b667-e3b466bfc6d6" />| <img width="350" height="650" alt="Create Photographer Account" src="https://github.com/user-attachments/assets/133bbd10-b62a-4c42-9cbc-31d0cae6c2fd" /> | <img width="350" height="650" alt="Create Viewer Account" src="https://github.com/user-attachments/assets/6025fa00-3c07-45dc-9561-024aa1d965a3" /> |
+
+## Photographer Page
+| Landing/Session Page | My Sessions | Session Details | Create Session Part1 | Create Session Final |
+| --- | --- | --- | --- | --- |
+|<img width="350" height="650" alt="Photographer Landing:Session Page" src="https://github.com/user-attachments/assets/b175cb65-4725-4e3c-a71a-50ace5c79892" /> | <img width="350" height="650" alt="Photographer My Session" src="https://github.com/user-attachments/assets/ae1b3fcf-7cad-4ec0-a88b-c4167ab8a22f" /> | <img width="350" height="650" alt="Photographer Session Details Page" src="https://github.com/user-attachments/assets/743312be-29df-4645-aea3-399bc8bfd6c9" /> | <img width="350" height="650" alt="Create Session part1" src="https://github.com/user-attachments/assets/7faa0dbc-48a7-4413-9456-acadfcdf9e8b" /> | <img width="350" height="650" alt="Create Session Part 2 Final" src="https://github.com/user-attachments/assets/94034bc5-b663-4234-9e8b-dfff1ec99410" /> |
+
+## Viewer Page
+| Landing Page | Session Details |
+| --- | --- |
+| <img width="350" height="650" alt="Viewer Landing Page" src="https://github.com/user-attachments/assets/0ec35f36-9d1a-444c-88e2-11966c7607d1" /> | <img width="350" height="650" alt="Viewer Session Details Page" src="https://github.com/user-attachments/assets/d22501e3-b55f-4491-8580-27726fdd01ec" /> |
+
 ## Architecture
 
 | Concern | Approach |
